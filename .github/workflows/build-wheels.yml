@@ -60,7 +60,7 @@ jobs:
         env:
           CIBW_BUILD: cp313-*
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
-          CIBW_BUILD_VERBOSITY: 1
+          CIBW_BUILD_VERBOSITY: 2
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_BEFORE_ALL_LINUX: |
             yum install -y gcc gcc-c++ make wget zlib-devel cyrus-sasl-devel openssl-devel
@@ -136,7 +136,7 @@ jobs:
 
           # Set environment variables for vcpkg installed libraries
           $vcpkgRoot = "C:\vcpkg\installed\x64-windows"
-          echo "INCLUDE=$vcpkgRoot\include;$env:INCLUDE" >> $env:GITHUB_ENV
+          echo "INCLUDE=$vcpkgRoot\include\libxml2;$vcpkgRoot\include;$env:INCLUDE" >> $env:GITHUB_ENV
           echo "LIB=$vcpkgRoot\lib;$env:LIB" >> $env:GITHUB_ENV
           echo "PATH=$vcpkgRoot\bin;$env:PATH" >> $env:GITHUB_ENV
 
@@ -159,7 +159,7 @@ jobs:
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
-            INCLUDE="C:\\vcpkg\\installed\\x64-windows\\include;$INCLUDE"
+            INCLUDE="C:\\vcpkg\\installed\\x64-windows\\include\\libxml2;C:\\vcpkg\\installed\\x64-windows\\include;$INCLUDE"
             LIB="C:\\vcpkg\\installed\\x64-windows\\lib;$LIB"
             PATH="C:\\vcpkg\\installed\\x64-windows\\bin;$PATH"
           CIBW_BEFORE_BUILD_WINDOWS: >
