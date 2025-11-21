@@ -160,7 +160,11 @@ jobs:
             CFLAGS="-I/usr/local/opt/libxml2/include -I/usr/local/opt/libxslt/include -I/opt/homebrew/opt/libxml2/include -I/opt/homebrew/opt/libxslt/include"
             LDFLAGS="-L/usr/local/opt/libxml2/lib -L/usr/local/opt/libxslt/lib -L/opt/homebrew/opt/libxml2/lib -L/opt/homebrew/opt/libxslt/lib"
             MACOSX_DEPLOYMENT_TARGET=15.0
-          CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} -L /usr/local/opt/libxml2/lib -L /usr/local/opt/libxslt/lib -L /opt/homebrew/opt/libxml2/lib -L /opt/homebrew/opt/libxslt/lib
+            DYLD_LIBRARY_PATH="/usr/local/opt/libxml2/lib:/usr/local/opt/libxslt/lib:/opt/homebrew/opt/libxml2/lib:/opt/homebrew/opt/libxslt/lib"
+          CIBW_BEFORE_BUILD_MACOS: >
+            pip install delocate
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
+            delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
