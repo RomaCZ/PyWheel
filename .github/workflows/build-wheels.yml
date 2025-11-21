@@ -33,22 +33,21 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
 
-      - name: Install librdkafka (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y librdkafka-dev
-
-      - name: Install librdkafka (macOS)
+      - name: Build librdkafka 2.12.1 from source (macOS)
         if: runner.os == 'macOS'
-        run: brew install librdkafka
+        run: |
+          curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
+          cd librdkafka-2.12.1
+          ./configure --prefix=/usr/local
+          make -j4
+          sudo make install
 
-      - name: Install librdkafka (Windows)
+      - name: Install librdkafka 2.12.1 from NuGet (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           New-Item -Path C:\librdkafka -ItemType Directory -Force
-          curl -L -o C:\librdkafka\librdkafka.zip https://www.nuget.org/api/v2/package/librdkafka.redist/2.12.1
+          Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/librdkafka.redist/2.12.1 -OutFile C:\librdkafka\librdkafka.zip
           Expand-Archive -Path C:\librdkafka\librdkafka.zip -DestinationPath C:\librdkafka -Force
           echo "INCLUDE=C:\librdkafka\build\native\include;$env:INCLUDE" >> $env:GITHUB_ENV
           echo "LIB=C:\librdkafka\build\native\lib\win\x64\win-x64-Release\v142;$env:LIB" >> $env:GITHUB_ENV
@@ -64,13 +63,16 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_BEFORE_ALL_LINUX: |
-            yum install -y librdkafka-devel || (
-              curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz &&
-              cd librdkafka-2.12.1 &&
-              ./configure --prefix=/usr &&
-              make &&
-              make install
-            )
+            yum install -y gcc gcc-c++ make wget zlib-devel cyrus-sasl-devel openssl-devel
+            curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
+            cd librdkafka-2.12.1
+            ./configure --prefix=/usr
+            make -j4
+            make install
+            ldconfig
+          CIBW_ENVIRONMENT_MACOS: >
+            CFLAGS="-I/usr/local/include"
+            LDFLAGS="-L/usr/local/lib"
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
