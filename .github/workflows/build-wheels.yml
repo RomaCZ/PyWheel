@@ -1,0 +1,135 @@
+name: Build Wheels
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  build_wheels:
+    name: Build ${{ matrix.package }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-13]
+        package:
+          - name: confluent-kafka
+            version: "2.4.0"
+            test: "import confluent_kafka; print(confluent_kafka.version())"
+          - name: lxml
+            version: "5.1.1"
+            test: "import lxml.etree; print(lxml.etree.__version__)"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Download source package
+        run: |
+          python -m pip download --no-binary :all: --no-deps ${{ matrix.package.name }}==${{ matrix.package.version }}
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==2.21.3
+
+      - name: Install build dependencies (Linux - confluent-kafka)
+        if: runner.os == 'Linux' && matrix.package.name == 'confluent-kafka'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librdkafka-dev
+
+      - name: Install build dependencies (macOS - confluent-kafka)
+        if: runner.os == 'macOS' && matrix.package.name == 'confluent-kafka'
+        run: |
+          brew install librdkafka
+
+      - name: Install build dependencies (Windows - confluent-kafka)
+        if: runner.os == 'Windows' && matrix.package.name == 'confluent-kafka'
+        shell: powershell
+        run: |
+          mkdir C:\librdkafka
+          curl -L -o C:\librdkafka\librdkafka.redist.nupkg https://www.nuget.org/api/v2/package/librdkafka.redist/2.12.1
+          Expand-Archive -Path C:\librdkafka\librdkafka.redist.nupkg -DestinationPath C:\librdkafka -Force
+          echo "INCLUDE=C:\librdkafka\build\native\include;$env:INCLUDE" >> $env:GITHUB_ENV
+          echo "LIB=C:\librdkafka\build\native\lib\win\x64\win-x64-Release\v142;$env:LIB" >> $env:GITHUB_ENV
+
+      - name: Install build dependencies (Linux - lxml)
+        if: runner.os == 'Linux' && matrix.package.name == 'lxml'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-dev libxslt1-dev
+
+      - name: Install build dependencies (macOS - lxml)
+        if: runner.os == 'macOS' && matrix.package.name == 'lxml'
+        run: |
+          brew install libxml2 libxslt
+
+      - name: Build wheels
+        run: python -m cibuildwheel ${{ matrix.package.name }}-${{ matrix.package.version }}.tar.gz --output-dir wheelhouse
+        env:
+          # Build only for Python 3.13
+          CIBW_BUILD: cp313-*
+
+          # Skip 32-bit builds and musllinux (we'll focus on manylinux)
+          CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
+
+          # Use manylinux2014 for better compatibility
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
+
+          # Install dependencies in the manylinux container (confluent-kafka)
+          CIBW_BEFORE_ALL_LINUX: |
+            if [[ "${{ matrix.package.name }}" == "confluent-kafka" ]]; then
+              yum install -y librdkafka-devel || (
+                curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz &&
+                cd librdkafka-2.12.1 &&
+                ./configure --prefix=/usr &&
+                make &&
+                make install
+              )
+            elif [[ "${{ matrix.package.name }}" == "lxml" ]]; then
+              yum install -y libxml2-devel libxslt-devel
+            fi
+
+          # Set environment variables for Windows build (confluent-kafka)
+          CIBW_ENVIRONMENT_WINDOWS: >
+            INCLUDE="C:\\librdkafka\\build\\native\\include;$INCLUDE"
+            LIB="C:\\librdkafka\\build\\native\\lib\\win\\x64\\win-x64-Release\\v142;$LIB"
+
+          # Test the built wheels
+          CIBW_TEST_COMMAND: python -c "${{ matrix.package.test }}"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.package.name }}-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+          retention-days: 30
+
+  # Optional: Create a release with all wheels
+  create_release:
+    name: Create Release
+    needs: build_wheels
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
