@@ -61,7 +61,7 @@ jobs:
           CIBW_BUILD: cp313-*
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_BEFORE_ALL_LINUX: |
             yum install -y gcc gcc-c++ make wget zlib-devel cyrus-sasl-devel openssl-devel
             curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
@@ -73,11 +73,15 @@ jobs:
           CIBW_ENVIRONMENT_MACOS: >
             CFLAGS="-I/usr/local/include"
             LDFLAGS="-L/usr/local/lib"
+            MACOSX_DEPLOYMENT_TARGET=15.0
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
             INCLUDE="C:\\librdkafka\\build\\native\\include;$INCLUDE"
             LIB="C:\\librdkafka\\build\\native\\lib\\win\\x64\\win-x64-Release\\v142;$LIB"
+            PATH="C:\\librdkafka\\runtimes\\win-x64\\native;$PATH"
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
+            delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
           CIBW_TEST_COMMAND: python -c "import confluent_kafka; print(confluent_kafka.version())"
 
       - name: Upload wheels
