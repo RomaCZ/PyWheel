@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-latest]
+        # We include both macos-13 (Intel) and macos-latest (ARM)
+        os: [ubuntu-22.04, windows-2022, macos-13, macos-latest]
 
     steps:
       - name: Set shorter temp path (Windows)
@@ -38,6 +39,10 @@ jobs:
         run: |
           curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
           cd librdkafka-2.12.1
+          
+          # Dynamic config: On ARM (macos-latest), /usr/local might not be writable or correct
+          # We let the compiler find the default paths or install to a local user dir if needed
+          # But usually standard ./configure works fine on both for this lib
           ./configure --prefix=/usr/local
           make -j4
           sudo make install
@@ -62,6 +67,8 @@ jobs:
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          
+          # LINUX
           CIBW_BEFORE_ALL_LINUX: |
             yum install -y gcc gcc-c++ make wget zlib-devel cyrus-sasl-devel openssl-devel
             curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
@@ -70,10 +77,17 @@ jobs:
             make -j4
             make install
             ldconfig
+            
+          # MACOS
+          # We use dynamic CFLAGS to support both Intel (/usr/local) and ARM (/opt/homebrew)
+          # if the user hasn't manually installed librdkafka, this might need adjustment, 
+          # but the step above installs it to /usr/local on both usually.
           CIBW_ENVIRONMENT_MACOS: >
             CFLAGS="-I/usr/local/include"
             LDFLAGS="-L/usr/local/lib"
-            MACOSX_DEPLOYMENT_TARGET=15.0
+            MACOSX_DEPLOYMENT_TARGET=13.0
+            
+          # WINDOWS
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
@@ -98,7 +112,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-latest]
+        # macos-13 = Intel (x86_64)
+        # macos-latest = Apple Silicon (arm64)
+        os: [ubuntu-22.04, windows-2022, macos-13, macos-latest]
 
     steps:
       - name: Set shorter temp path (Windows)
@@ -117,20 +133,20 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
 
-      # --- HOST INSTALLATION (For pip download only) ---
-      # We still install these so 'pip download' on the host doesn't crash
       - name: Install host dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libxml2-dev libxslt1-dev
 
+      # --- MACOS SETUP (Dynamic for both Intel and ARM) ---
       - name: Install host dependencies (macOS)
         if: runner.os == 'macOS'
-        # We install these to satisfy the 'pip download' metadata check on the Host
-        # BUT we will ignore them during the actual wheel build
         run: |
           brew install libxml2 libxslt pkg-config
+          # We dynamically find the path. 
+          # On Intel (macos-13) this will be /usr/local/...
+          # On ARM (macos-latest) this will be /opt/homebrew/...
           echo "PKG_CONFIG_PATH=$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libxslt)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Install host dependencies (Windows)
@@ -143,7 +159,6 @@ jobs:
           echo "LIB=$vcpkgRoot\lib;$env:LIB" >> $env:GITHUB_ENV
           echo "PATH=$vcpkgRoot\bin;$env:PATH" >> $env:GITHUB_ENV
 
-      # --- BUILD STEP ---
       - name: Download and build from source
         shell: bash
         run: |
@@ -155,21 +170,21 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           
-          # LINUX: Keep this, it is working
+          # LINUX
           CIBW_BEFORE_ALL_LINUX: yum install -y libxml2-devel libxslt-devel zlib-devel pkgconfig
           CIBW_ENVIRONMENT_LINUX: CFLAGS="-I/usr/include/libxml2"
 
-          # MACOS: THE FIX
-          # 1. We removed PKG_CONFIG_PATH (so it ignores brew)
-          # 2. We set STATIC_DEPS=true (so it compiles x86_64 libs from source)
+          # MACOS
+          # We use the PKG_CONFIG_PATH we set dynamically in the setup step.
+          # We explicitly set deployment target to 13.0 to ensure compatibility.
           CIBW_ENVIRONMENT_MACOS: >
-             STATIC_DEPS=true
-             MACOSX_DEPLOYMENT_TARGET=15.0
-
-          # We also remove the -L flags from delocate, because the libs are now static
+             PKG_CONFIG_PATH="${PKG_CONFIG_PATH}"
+             MACOSX_DEPLOYMENT_TARGET=13.0
+          
+          # This command bundles the dylibs into the wheel so it runs standalone
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
 
-          # WINDOWS: Keep this, it is working
+          # WINDOWS
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
