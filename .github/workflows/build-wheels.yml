@@ -81,7 +81,7 @@ jobs:
             LIB="C:\\librdkafka\\build\\native\\lib\\win\\x64\\win-x64-Release\\v142;$LIB"
             PATH="C:\\librdkafka\\runtimes\\win-x64\\native;$PATH"
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
-            delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
+            python -m delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
           CIBW_TEST_COMMAND: python -c "import confluent_kafka; print(confluent_kafka.version())"
 
       - name: Upload wheels
@@ -125,6 +125,22 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install libxml2 libxslt
 
+      - name: Install lxml dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          # Install vcpkg
+          git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+
+          # Install libxml2 and libxslt
+          C:\vcpkg\vcpkg.exe install libxml2:x64-windows libxslt:x64-windows --clean-after-build
+
+          # Set environment variables
+          echo "INCLUDE=C:\vcpkg\installed\x64-windows\include;$env:INCLUDE" >> $env:GITHUB_ENV
+          echo "LIB=C:\vcpkg\installed\x64-windows\lib;$env:LIB" >> $env:GITHUB_ENV
+          echo "PATH=C:\vcpkg\installed\x64-windows\bin;$env:PATH" >> $env:GITHUB_ENV
+
       - name: Download and build from source
         run: |
           python -m pip download --no-binary=:all: --no-deps "lxml==5.1.1"
@@ -134,11 +150,20 @@ jobs:
           CIBW_BUILD: cp313-*
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           CIBW_BEFORE_ALL_LINUX: yum install -y libxml2-devel libxslt-devel
+          CIBW_ENVIRONMENT_MACOS: >
+            CFLAGS="-I/opt/homebrew/opt/libxml2/include -I/opt/homebrew/opt/libxslt/include"
+            LDFLAGS="-L/opt/homebrew/opt/libxml2/lib -L/opt/homebrew/opt/libxslt/lib"
+            MACOSX_DEPLOYMENT_TARGET=15.0
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
+            INCLUDE="C:\\vcpkg\\installed\\x64-windows\\include;$INCLUDE"
+            LIB="C:\\vcpkg\\installed\\x64-windows\\lib;$LIB"
+            PATH="C:\\vcpkg\\installed\\x64-windows\\bin;$PATH"
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
+            python -m delvewheel repair -w {dest_dir} {wheel} --add-path C:\\vcpkg\\installed\\x64-windows\\bin
           CIBW_TEST_COMMAND: python -c "import lxml.etree; print(lxml.etree.__version__)"
 
       - name: Upload wheels
