@@ -117,16 +117,21 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
 
-      # --- MACOS SETUP ---
-      - name: Install lxml dependencies (macOS)
+      # --- HOST INSTALLATION (Required for `pip download` to work) ---
+      - name: Install host dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-dev libxslt1-dev
+
+      - name: Install host dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install libxml2 libxslt pkg-config
-          # We calculate the pkg-config path here so we can pass it to cibuildwheel later
+          # Set PKG_CONFIG_PATH for the host (for pip download) AND save to ENV for cibuildwheel
           echo "PKG_CONFIG_PATH=$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libxslt)/lib/pkgconfig" >> $GITHUB_ENV
 
-      # --- WINDOWS SETUP ---
-      - name: Install lxml dependencies (Windows)
+      - name: Install host dependencies (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
@@ -147,20 +152,20 @@ jobs:
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-
-          # LINUX: Install deps and FORCE the include path so compiler finds headers
+          
+          # LINUX: Docker Container installation (required for COMPILATION)
           CIBW_BEFORE_ALL_LINUX: yum install -y libxml2-devel libxslt-devel zlib-devel pkgconfig
+          # Force include path for RedHat-based manylinux images
           CIBW_ENVIRONMENT_LINUX: CFLAGS="-I/usr/include/libxml2"
 
-          # MACOS: Use the PKG_CONFIG_PATH we set in the previous step
+          # MACOS: Use the PKG_CONFIG_PATH set in the host step
           CIBW_ENVIRONMENT_MACOS: >
             PKG_CONFIG_PATH="${PKG_CONFIG_PATH}"
-            LDFLAGS="-L/usr/local/lib"
-            CFLAGS="-I/usr/local/include"
             MACOSX_DEPLOYMENT_TARGET=15.0
+          
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
 
-          # WINDOWS: Keep existing working vcpkg setup
+          # WINDOWS: Vcpkg env vars are passed automatically from the host step
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
@@ -169,7 +174,7 @@ jobs:
             PATH="C:\\vcpkg\\installed\\x64-windows\\bin;$PATH"
           CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair -w {dest_dir} {wheel} --add-path C:\\vcpkg\\installed\\x64-windows\\bin
-
+          
           CIBW_TEST_COMMAND: python -c "import lxml.etree; print(lxml.etree.__version__)"
 
       - name: Upload wheels
