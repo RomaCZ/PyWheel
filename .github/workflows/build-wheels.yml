@@ -117,7 +117,15 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
 
-      # Windows Only: Install dependencies via vcpkg
+      # --- MACOS SETUP ---
+      - name: Install lxml dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install libxml2 libxslt pkg-config
+          # We calculate the pkg-config path here so we can pass it to cibuildwheel later
+          echo "PKG_CONFIG_PATH=$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libxslt)/lib/pkgconfig" >> $GITHUB_ENV
+
+      # --- WINDOWS SETUP ---
       - name: Install lxml dependencies (Windows)
         if: runner.os == 'Windows'
         shell: powershell
@@ -128,29 +136,31 @@ jobs:
           echo "LIB=$vcpkgRoot\lib;$env:LIB" >> $env:GITHUB_ENV
           echo "PATH=$vcpkgRoot\bin;$env:PATH" >> $env:GITHUB_ENV
 
+      # --- BUILD STEP ---
       - name: Download and build from source
+        shell: bash
         run: |
           python -m pip download --no-binary=:all: --no-deps "lxml==5.1.1"
           python -m cibuildwheel "lxml-5.1.1.tar.gz" --output-dir wheelhouse
-        shell: bash
         env:
           CIBW_BUILD: cp313-*
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-          
-          # LINUX STATIC CONFIG
-          # We only need zlib-devel so lxml can compile its own libxml2 against it
-          CIBW_BEFORE_ALL_LINUX: yum install -y zlib-devel
-          CIBW_ENVIRONMENT_LINUX: STATIC_DEPS=true
-          
-          # MACOS STATIC CONFIG
-          # We strip all custom CFLAGS. STATIC_DEPS=true handles the rest.
-          CIBW_ENVIRONMENT_MACOS: STATIC_DEPS=true
-          MACOSX_DEPLOYMENT_TARGET: "15.0"
+
+          # LINUX: Install deps and FORCE the include path so compiler finds headers
+          CIBW_BEFORE_ALL_LINUX: yum install -y libxml2-devel libxslt-devel zlib-devel pkgconfig
+          CIBW_ENVIRONMENT_LINUX: CFLAGS="-I/usr/include/libxml2"
+
+          # MACOS: Use the PKG_CONFIG_PATH we set in the previous step
+          CIBW_ENVIRONMENT_MACOS: >
+            PKG_CONFIG_PATH="${PKG_CONFIG_PATH}"
+            LDFLAGS="-L/usr/local/lib"
+            CFLAGS="-I/usr/local/include"
+            MACOSX_DEPLOYMENT_TARGET=15.0
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
 
-          # WINDOWS CONFIG (Kept as vcpkg)
+          # WINDOWS: Keep existing working vcpkg setup
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
@@ -159,7 +169,7 @@ jobs:
             PATH="C:\\vcpkg\\installed\\x64-windows\\bin;$PATH"
           CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair -w {dest_dir} {wheel} --add-path C:\\vcpkg\\installed\\x64-windows\\bin
-          
+
           CIBW_TEST_COMMAND: python -c "import lxml.etree; print(lxml.etree.__version__)"
 
       - name: Upload wheels
