@@ -117,7 +117,8 @@ jobs:
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
 
-      # --- HOST INSTALLATION (Required for `pip download` to work) ---
+      # --- HOST INSTALLATION (For pip download only) ---
+      # We still install these so 'pip download' on the host doesn't crash
       - name: Install host dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -126,9 +127,10 @@ jobs:
 
       - name: Install host dependencies (macOS)
         if: runner.os == 'macOS'
+        # We install these to satisfy the 'pip download' metadata check on the Host
+        # BUT we will ignore them during the actual wheel build
         run: |
           brew install libxml2 libxslt pkg-config
-          # Set PKG_CONFIG_PATH for the host (for pip download) AND save to ENV for cibuildwheel
           echo "PKG_CONFIG_PATH=$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libxslt)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Install host dependencies (Windows)
@@ -153,19 +155,21 @@ jobs:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           
-          # LINUX: Docker Container installation (required for COMPILATION)
+          # LINUX: Keep this, it is working
           CIBW_BEFORE_ALL_LINUX: yum install -y libxml2-devel libxslt-devel zlib-devel pkgconfig
-          # Force include path for RedHat-based manylinux images
           CIBW_ENVIRONMENT_LINUX: CFLAGS="-I/usr/include/libxml2"
 
-          # MACOS: Use the PKG_CONFIG_PATH set in the host step
+          # MACOS: THE FIX
+          # 1. We removed PKG_CONFIG_PATH (so it ignores brew)
+          # 2. We set STATIC_DEPS=true (so it compiles x86_64 libs from source)
           CIBW_ENVIRONMENT_MACOS: >
-            PKG_CONFIG_PATH="${PKG_CONFIG_PATH}"
-            MACOSX_DEPLOYMENT_TARGET=15.0
-          
+             STATIC_DEPS=true
+             MACOSX_DEPLOYMENT_TARGET=15.0
+
+          # We also remove the -L flags from delocate, because the libs are now static
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
 
-          # WINDOWS: Vcpkg env vars are passed automatically from the host step
+          # WINDOWS: Keep this, it is working
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
