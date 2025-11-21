@@ -80,8 +80,10 @@ jobs:
             INCLUDE="C:\\librdkafka\\build\\native\\include;$INCLUDE"
             LIB="C:\\librdkafka\\build\\native\\lib\\win\\x64\\win-x64-Release\\v142;$LIB"
             PATH="C:\\librdkafka\\runtimes\\win-x64\\native;$PATH"
+          CIBW_BEFORE_BUILD_WINDOWS: >
+            pip install delvewheel
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
-            python -m delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
+            delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
           CIBW_TEST_COMMAND: python -c "import confluent_kafka; print(confluent_kafka.version())"
 
       - name: Upload wheels
@@ -156,14 +158,17 @@ jobs:
             CFLAGS="-I/opt/homebrew/opt/libxml2/include -I/opt/homebrew/opt/libxslt/include"
             LDFLAGS="-L/opt/homebrew/opt/libxml2/lib -L/opt/homebrew/opt/libxslt/lib"
             MACOSX_DEPLOYMENT_TARGET=15.0
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: DYLD_LIBRARY_PATH=/opt/homebrew/opt/libxml2/lib:/opt/homebrew/opt/libxslt/lib delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
             INCLUDE="C:\\vcpkg\\installed\\x64-windows\\include;$INCLUDE"
             LIB="C:\\vcpkg\\installed\\x64-windows\\lib;$LIB"
             PATH="C:\\vcpkg\\installed\\x64-windows\\bin;$PATH"
+          CIBW_BEFORE_BUILD_WINDOWS: >
+            pip install delvewheel
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
-            python -m delvewheel repair -w {dest_dir} {wheel} --add-path C:\\vcpkg\\installed\\x64-windows\\bin
+            delvewheel repair -w {dest_dir} {wheel} --add-path C:\\vcpkg\\installed\\x64-windows\\bin
           CIBW_TEST_COMMAND: python -c "import lxml.etree; print(lxml.etree.__version__)"
 
       - name: Upload wheels
