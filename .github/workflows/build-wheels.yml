@@ -14,7 +14,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # We include both macos-13 (Intel) and macos-latest (ARM)
         os: [ubuntu-22.04, windows-2022, macos-13, macos-latest]
 
     steps:
@@ -39,10 +38,6 @@ jobs:
         run: |
           curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
           cd librdkafka-2.12.1
-          
-          # Dynamic config: On ARM (macos-latest), /usr/local might not be writable or correct
-          # We let the compiler find the default paths or install to a local user dir if needed
-          # But usually standard ./configure works fine on both for this lib
           ./configure --prefix=/usr/local
           make -j4
           sudo make install
@@ -67,8 +62,6 @@ jobs:
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
-          
-          # LINUX
           CIBW_BEFORE_ALL_LINUX: |
             yum install -y gcc gcc-c++ make wget zlib-devel cyrus-sasl-devel openssl-devel
             curl -L https://github.com/confluentinc/librdkafka/archive/v2.12.1.tar.gz | tar xz
@@ -77,27 +70,18 @@ jobs:
             make -j4
             make install
             ldconfig
-            
-          # MACOS
-          # We use dynamic CFLAGS to support both Intel (/usr/local) and ARM (/opt/homebrew)
-          # if the user hasn't manually installed librdkafka, this might need adjustment, 
-          # but the step above installs it to /usr/local on both usually.
+          # We use generic macOS config here as librdkafka builds are simpler
           CIBW_ENVIRONMENT_MACOS: >
             CFLAGS="-I/usr/local/include"
             LDFLAGS="-L/usr/local/lib"
-            MACOSX_DEPLOYMENT_TARGET=13.0
-            
-          # WINDOWS
           CIBW_ENVIRONMENT_WINDOWS: >
             TEMP=C:\\tmp
             TMP=C:\\tmp
             INCLUDE="C:\\librdkafka\\build\\native\\include;$INCLUDE"
             LIB="C:\\librdkafka\\build\\native\\lib\\win\\x64\\win-x64-Release\\v142;$LIB"
             PATH="C:\\librdkafka\\runtimes\\win-x64\\native;$PATH"
-          CIBW_BEFORE_BUILD_WINDOWS: >
-            pip install delvewheel
-          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
-            delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
+          CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair -w {dest_dir} {wheel} --add-path C:\\librdkafka\\runtimes\\win-x64\\native
           CIBW_TEST_COMMAND: python -c "import confluent_kafka; print(confluent_kafka.version())"
 
       - name: Upload wheels
@@ -112,9 +96,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 = Intel (x86_64)
-        # macos-latest = Apple Silicon (arm64)
-        os: [ubuntu-22.04, windows-2022, macos-13, macos-latest]
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+          - os: windows-2022
+            arch: AMD64
+          # INTEL MAC: Force x86_64 build
+          - os: macos-13
+            arch: x86_64
+          # APPLE SILICON MAC: Force arm64 build
+          - os: macos-latest
+            arch: arm64
 
     steps:
       - name: Set shorter temp path (Windows)
@@ -139,14 +131,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxml2-dev libxslt1-dev
 
-      # --- MACOS SETUP (Dynamic for both Intel and ARM) ---
       - name: Install host dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install libxml2 libxslt pkg-config
-          # We dynamically find the path. 
-          # On Intel (macos-13) this will be /usr/local/...
-          # On ARM (macos-latest) this will be /opt/homebrew/...
+          # Dynamically set PKG_CONFIG_PATH based on architecture (Intel vs ARM)
           echo "PKG_CONFIG_PATH=$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libxslt)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Install host dependencies (Windows)
@@ -166,6 +155,8 @@ jobs:
           python -m cibuildwheel "lxml-5.1.1.tar.gz" --output-dir wheelhouse
         env:
           CIBW_BUILD: cp313-*
+          # WE EXPLICITLY SET THE ARCHITECTURE HERE
+          CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
@@ -175,13 +166,11 @@ jobs:
           CIBW_ENVIRONMENT_LINUX: CFLAGS="-I/usr/include/libxml2"
 
           # MACOS
-          # We use the PKG_CONFIG_PATH we set dynamically in the setup step.
-          # We explicitly set deployment target to 13.0 to ensure compatibility.
+          # We simply use the dynamic PKG_CONFIG_PATH and set the Deployment Target
           CIBW_ENVIRONMENT_MACOS: >
              PKG_CONFIG_PATH="${PKG_CONFIG_PATH}"
              MACOSX_DEPLOYMENT_TARGET=13.0
           
-          # This command bundles the dylibs into the wheel so it runs standalone
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
 
           # WINDOWS
