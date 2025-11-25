@@ -38,7 +38,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.12.7'
 
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
@@ -68,7 +68,7 @@ jobs:
           python -m cibuildwheel "confluent-kafka-2.4.0.tar.gz" --output-dir wheelhouse
         shell: bash
         env:
-          CIBW_BUILD: cp313-*
+          CIBW_BUILD: cp312-*
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
@@ -135,7 +135,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: '3.12.7'
 
       - name: Install cibuildwheel
         run: python -m pip install cibuildwheel==2.21.3
@@ -168,7 +168,7 @@ jobs:
           python -m pip download --no-binary=:all: --no-deps "lxml==5.1.1"
           python -m cibuildwheel "lxml-5.1.1.tar.gz" --output-dir wheelhouse
         env:
-          CIBW_BUILD: cp313-*
+          CIBW_BUILD: cp312-*
           CIBW_ARCHS: ${{ matrix.arch }}
           CIBW_SKIP: "*-win32 *-manylinux_i686 *-manylinux_aarch64 *-manylinux_ppc64le *-manylinux_s390x *-musllinux_*"
           CIBW_BUILD_VERBOSITY: 1
